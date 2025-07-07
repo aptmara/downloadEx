@@ -4,7 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ダウンロード振り分け設定</title>
-    <link rel="stylesheet" href="options.css"> </head>
+    <link rel="stylesheet" href="options.css">
+</head>
 <body>
     <h1>ダウンロード振り分け設定</h1>
 
@@ -32,11 +33,13 @@
                 <div class="modal-body">
                     <p id="modalDescription" class="sr-only">ダウンロード振り分けルールを作成または編集します。</p>
                     <input type="hidden" id="ruleId">
+
                     <div class="form-group">
                         <label for="sitePattern">サイトパターン (URLまたはキーワード)</label>
                         <input type="text" id="sitePattern" name="sitePattern" required placeholder="例: google.com または 会議資料">
                         <small>完全一致、部分一致 (デフォルト)、または正規表現で指定します。</small>
                     </div>
+
                     <div class="form-group">
                         <label for="matchType">マッチ種別</label>
                         <select id="matchType" name="matchType">
@@ -45,22 +48,43 @@
                             <option value="regex">正規表現 (高度なパターンマッチ)</option>
                         </select>
                     </div>
+
                     <div class="form-group">
                         <label for="folderName">保存先フォルダ名</label>
                         <input type="text" id="folderName" name="folderName" required placeholder="例: 仕事/プロジェクトA">
                         <small>ダウンロードフォルダ内のサブフォルダ名を指定します。空の場合はルートに保存。</small>
                     </div>
+
                     <div class="form-group">
-                        <label for="fileTypes">ファイルタイプ (カンマ区切り、任意)</label>
-                        <input type="text" id="fileTypes" name="fileTypes" placeholder="例: pdf, docx, jpg">
-                        <small>指定しない場合は全てのファイルタイプにマッチします (例: png, zip)。</small>
+                        <label for="fileTypesInput">ファイルタイプ (任意)</label>
+                        <div id="fileTypesContainer" class="tag-container">
+                             <input type="text" id="fileTypesInput" placeholder="例: pdf, docx, jpg">
+                        </div>
+                        <small>指定しない場合は全てのファイルタイプにマッチします。Enterキーかカンマで入力してください。</small>
                     </div>
+
+                    <div class="form-group">
+                        <label>判定ターゲット</label>
+                        <div class="radio-group">
+                            <label class="radio-label">
+                                <input type="radio" id="targetTypeFile" name="targetType" value="fileUrl" checked>
+                                ファイルURL
+                            </label>
+                            <label class="radio-label">
+                                <input type="radio" id="targetTypePage" name="targetType" value="pageUrl">
+                                ページURL
+                            </label>
+                        </div>
+                        <small>どのURLをサイトパターンの判定に使うか選択します。</small>
+                    </div>
+
                     <div class="form-group">
                         <label for="priority">優先度 (数値)</label>
-                        <input type="number" id="priority" name="priority" value="0" placeholder="例: 10">
-                        <small>数値が大きいほど優先的に適用されます。デフォルトは0。</small>
+                        <input type="number" id="priority" name="priority" placeholder="例: 10">
+                        <small>数値が大きいほど優先的に適用されます。空の場合、自動で設定されます。</small>
                     </div>
                 </div>
+
                 <div class="modal-footer">
                     <button type="button" id="cancelRuleButton" class="btn btn-secondary">キャンセル</button>
                     <button type="submit" id="saveRuleButton" class="btn btn-primary">ルールを保存</button>
