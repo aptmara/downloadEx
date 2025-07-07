@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "ダウンロードフォルダ振り分け",
+  "version": "1.2.1",
+  "description": "特定のサイトやファイルタイプからのダウンロードを指定したサブフォルダに、優先度付きルールで柔軟に保存します。",
+  "permissions": [
+    "downloads",
+    "storage"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "options_page": "options.html",
+  "action": {
+    "default_popup": "options.html",
+    "default_title": "振り分け設定"
+  },
+  "icons": {
+    "16": "images/images_square_16x16.png",
+    "48": "images/images_square_48x48.png",
+    "128": "images/images_square_128x128.png"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self';"
+  }
+}

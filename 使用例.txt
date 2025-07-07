@@ -1,0 +1,6 @@
+boothからダウンロードした奴はdownload/boothフォルダに
+googleドライブからダウンロードした奴はdownload/googleフォルダにー
+zipファイルはdownload/zipフォルダにー
+みたいなことができます
+優先順位もつけれるので
+amazonからダウンロードしたzipはamazonフォルダに入れたいけど、そのほかのzipファイルはzipにってこともできます
