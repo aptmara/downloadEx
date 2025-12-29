@@ -630,6 +630,7 @@ class UIManager {
         } else {
             // Defaults
             this.elements.matchTypeSelect.value = 'includes';
+            const defaultRadio = document.getElementById('targetTypeFile');
             if (defaultRadio) defaultRadio.checked = true;
             this.elements.enableDateSubfolderInput.checked = false;
         }
