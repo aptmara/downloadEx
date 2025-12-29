@@ -143,6 +143,7 @@ const processRules = (rawRules) => {
 
             sitePattern: rule.sitePattern || '', // ログ出力やExactマッチで必要
             folderName: rule.folderName || '',
+            enableDateSubfolder: rule.enableDateSubfolder === true,
 
             // 最適化: 判定に必要な小文字化済み配列のみ保持し、元の配列は破棄
             lowerCaseFileTypes: fileTypesArray
@@ -330,63 +331,68 @@ const decideFilename = (downloadItem, rules) => {
         } catch (e) { console.error(e); }
 
         if (isMatch) {
-            if (rule.lowerCaseFileTypes && rule.lowerCaseFileTypes.length > 0) {
-                if (!ext || !rule.lowerCaseFileTypes.includes(ext)) {
-                    continue;
-                }
-            }
-
-            let folderName = rule.folderName || '';
-            if (folderName.includes('{domain}') && !cachedDomain) {
-                const sourceUrl = (downloadItem.ruleTargetType === 'pageUrl' && downloadItem.referrer)
-                    ? downloadItem.referrer
-                    : downloadItem.url;
-                try {
-                    cachedDomain = new URL(sourceUrl).hostname;
-                } catch (e) { cachedDomain = 'unknown'; }
-            }
-
-            folderName = replacePlaceholders(folderName, downloadItem, cachedDomain);
-            const sanitizedFolderName = sanitizeFolderName(folderName);
-
-            if (rule.folderName && !sanitizedFolderName) {
+            if (!ext || !rule.lowerCaseFileTypes.includes(ext)) {
                 continue;
             }
-
-            const newFilename = sanitizedFolderName
-                ? `${sanitizedFolderName}/${downloadItem.filename}`
-                : downloadItem.filename;
-
-            console.log(`[DownloaderExt] Matched Rule ID: ${rule.id} -> ${newFilename}`);
-
-            // ログ保存 (常に非同期デバウンス)
-            saveLogDebounced({
-                timestamp: Date.now(),
-                filename: downloadItem.filename,
-                finalPath: newFilename,
-                url: downloadItem.url,
-                referrer: downloadItem.referrer,
-                ruleId: rule.id,
-                ruleName: rule.sitePattern,
-                status: 'matched'
-            });
-
-            return { filename: newFilename, conflictAction: 'uniquify' };
         }
+
+        let folderName = rule.folderName || '';
+
+        // 日付サブフォルダオプションが有効な場合、末尾に追加
+        if (rule.enableDateSubfolder) {
+            folderName = folderName ? `${folderName}/{YYYY-MM-DD}` : `{YYYY-MM-DD}`;
+        }
+
+        if (folderName.includes('{domain}') && !cachedDomain) {
+            const sourceUrl = (downloadItem.ruleTargetType === 'pageUrl' && downloadItem.referrer)
+                ? downloadItem.referrer
+                : downloadItem.url;
+            try {
+                cachedDomain = new URL(sourceUrl).hostname;
+            } catch (e) { cachedDomain = 'unknown'; }
+        }
+
+        folderName = replacePlaceholders(folderName, downloadItem, cachedDomain);
+        const sanitizedFolderName = sanitizeFolderName(folderName);
+
+        if (rule.folderName && !sanitizedFolderName) {
+            continue;
+        }
+
+        const newFilename = sanitizedFolderName
+            ? `${sanitizedFolderName}/${downloadItem.filename}`
+            : downloadItem.filename;
+
+        console.log(`[DownloaderExt] Matched Rule ID: ${rule.id} -> ${newFilename}`);
+
+        // ログ保存 (常に非同期デバウンス)
+        saveLogDebounced({
+            timestamp: Date.now(),
+            filename: downloadItem.filename,
+            finalPath: newFilename,
+            url: downloadItem.url,
+            referrer: downloadItem.referrer,
+            ruleId: rule.id,
+            ruleName: rule.sitePattern,
+            status: 'matched'
+        });
+
+        return { filename: newFilename, conflictAction: 'uniquify' };
     }
+}
 
-    // マッチしなかった場合
-    saveLogDebounced({
-        timestamp: Date.now(),
-        filename: downloadItem.filename,
-        finalPath: downloadItem.filename,
-        url: downloadItem.url,
-        referrer: downloadItem.referrer,
-        ruleId: null,
-        status: 'no_match'
-    });
+// マッチしなかった場合
+saveLogDebounced({
+    timestamp: Date.now(),
+    filename: downloadItem.filename,
+    finalPath: downloadItem.filename,
+    url: downloadItem.url,
+    referrer: downloadItem.referrer,
+    ruleId: null,
+    status: 'no_match'
+});
 
-    return undefined;
+return undefined;
 };
 
 chrome.downloads.onDeterminingFilename.addListener((downloadItem, suggest) => {

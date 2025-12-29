@@ -15,6 +15,14 @@
         <header class="main-header">
             <div class="header-logo">DownloadEx</div>
             <div class="header-actions">
+                <button id="openHelpButton" class="btn-icon-minimal" aria-label="ヘルプ">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+                        <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                    </svg>
+                </button>
                 <div class="toggle-group">
                     <span class="toggle-label">標準</span>
                     <label class="switch-minimal">
@@ -61,76 +69,139 @@
         </main>
     </div>
 
-    <!-- Minimal Modal -->
-    <div id="ruleFormModal" class="modal-backdrop">
+    <button id="closeModalButton" class="modal-close">&times;</button>
+    </div>
+    <form id="ruleForm" novalidate>
+        <!-- Form Content Omitted for brevity, assuming generic form structure remains -->
+        <input type="hidden" id="ruleId">
+        <div class="form-row">
+            <div class="input-wrapper">
+                <label for="sitePattern">サイトパターン / キーワード</label>
+                <input type="text" id="sitePattern" name="sitePattern" required placeholder="例: google.com">
+            </div>
+        </div>
+        <div class="form-row expert-only">
+            <div class="input-wrapper">
+                <label for="matchType">マッチ条件</label>
+                <select id="matchType" name="matchType">
+                    <option value="includes">部分一致</option>
+                    <option value="exact">完全一致</option>
+                    <option value="regex">正規表現</option>
+                </select>
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="input-wrapper">
+                <label for="folderName">保存先フォルダ名</label>
+                <input type="text" id="folderName" name="folderName" required placeholder="例: 仕事/資料">
+            </div>
+        </div>
+        <!-- Date Option -->
+        <div class="form-row">
+            <div class="input-wrapper">
+                <label class="switch-row">
+                    <span class="label-text">日付サブフォルダを作成 ({YYYY-MM-DD})</span>
+                    <div class="switch-minimal">
+                        <input type="checkbox" id="enableDateSubfolder" name="enableDateSubfolder">
+                        <span class="slider-minimal"></span>
+                    </div>
+                </label>
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="input-wrapper">
+                <label for="fileTypesInput">ファイルタイプ (任意)</label>
+                <div id="fileTypesContainer" class="tag-input-minimal">
+                    <input type="text" id="fileTypesInput" placeholder="pdf, jpg... (Enterで追加)">
+                </div>
+            </div>
+        </div>
+        <div class="form-row expert-only">
+            <label class="radio-group-label">判定対象</label>
+            <div class="radio-minimal-group">
+                <label class="radio-minimal">
+                    <input type="radio" id="targetTypeFile" name="targetType" value="fileUrl" checked>
+                    <span>ファイルURL</span>
+                </label>
+                <label class="radio-minimal">
+                    <input type="radio" id="targetTypePage" name="targetType" value="pageUrl">
+                    <span>ページURL</span>
+                </label>
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="input-wrapper">
+                <label for="priority">優先度</label>
+                <input type="number" id="priority" name="priority" placeholder="自動設定 (数値が大きいほど優先)">
+            </div>
+        </div>
+        <div class="modal-actions">
+            <button type="button" id="cancelRuleButton" class="btn-text">キャンセル</button>
+            <button type="submit" id="saveRuleButton" class="btn-primary-minimal">保存</button>
+        </div>
+    </form>
+    </div>
+    </div>
+
+    <!-- Help Modal -->
+    <div id="helpModal" class="modal-backdrop">
         <div class="modal-card">
             <div class="modal-header">
-                <h2 id="formTitle">ルール編集</h2>
-                <button id="closeModalButton" class="modal-close">&times;</button>
+                <h2>ヘルプ & 使い方</h2>
+                <button id="closeHelpButton" class="modal-close">&times;</button>
             </div>
-            <form id="ruleForm" novalidate>
-                <input type="hidden" id="ruleId">
+            <div class="modal-content-scroll">
+                <h3>基本的な使い方</h3>
+                <ol class="help-list">
+                    <li>「新規ルール」ボタンをクリックします。</li>
+                    <li><strong>サイトパターン</strong>にURLの一部（例: <code>github.com</code>）を入力します。</li>
+                    <li><strong>保存先フォルダ名</strong>を入力します（例: <code>Works</code>）。</li>
+                    <li>必要に応じてファイルタイプ（拡張子）を指定します。</li>
+                    <li>「保存」をクリックすると、次回から自動で振り分けられます。</li>
+                </ol>
 
-                <div class="form-row">
-                    <div class="input-wrapper">
-                        <label for="sitePattern">サイトパターン / キーワード</label>
-                        <input type="text" id="sitePattern" name="sitePattern" required placeholder="例: google.com">
-                    </div>
+                <h3>使用できるプレースホルダー</h3>
+                <p class="help-desc">フォルダ名に以下のキーワードを入れると、ダウンロード時に自動で置換されます。</p>
+                <table class="help-table">
+                    <thead>
+                        <tr>
+                            <th>キーワード</th>
+                            <th>説明</th>
+                            <th>例</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>{YYYY}</code></td>
+                            <td>年 (4桁)</td>
+                            <td>2025</td>
+                        </tr>
+                        <tr>
+                            <td><code>{MM}</code></td>
+                            <td>月 (2桁)</td>
+                            <td>05</td>
+                        </tr>
+                        <tr>
+                            <td><code>{DD}</code></td>
+                            <td>日 (2桁)</td>
+                            <td>24</td>
+                        </tr>
+                        <tr>
+                            <td><code>{YYYY-MM-DD}</code></td>
+                            <td>年月日</td>
+                            <td>2025-05-24</td>
+                        </tr>
+                        <tr>
+                            <td><code>{domain}</code></td>
+                            <td>ドメイン名</td>
+                            <td>example.com</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="help-note">
+                    <strong>Note:</strong> 「日付サブフォルダを作成」オプションをONにすると、自動的に末尾に <code>/{YYYY-MM-DD}</code> が追加されます。
                 </div>
-
-                <div class="form-row expert-only">
-                    <div class="input-wrapper">
-                        <label for="matchType">マッチ条件</label>
-                        <select id="matchType" name="matchType">
-                            <option value="includes">部分一致</option>
-                            <option value="exact">完全一致</option>
-                            <option value="regex">正規表現</option>
-                        </select>
-                    </div>
-                </div>
-
-                <div class="form-row">
-                    <div class="input-wrapper">
-                        <label for="folderName">保存先フォルダ名</label>
-                        <input type="text" id="folderName" name="folderName" required placeholder="例: 仕事/資料">
-                    </div>
-                </div>
-
-                <div class="form-row">
-                    <div class="input-wrapper">
-                        <label for="fileTypesInput">ファイルタイプ (任意)</label>
-                        <div id="fileTypesContainer" class="tag-input-minimal">
-                            <input type="text" id="fileTypesInput" placeholder="pdf, jpg... (Enterで追加)">
-                        </div>
-                    </div>
-                </div>
-
-                <div class="form-row expert-only">
-                    <label class="radio-group-label">判定対象</label>
-                    <div class="radio-minimal-group">
-                        <label class="radio-minimal">
-                            <input type="radio" id="targetTypeFile" name="targetType" value="fileUrl" checked>
-                            <span>ファイルURL</span>
-                        </label>
-                        <label class="radio-minimal">
-                            <input type="radio" id="targetTypePage" name="targetType" value="pageUrl">
-                            <span>ページURL</span>
-                        </label>
-                    </div>
-                </div>
-
-                <div class="form-row">
-                    <div class="input-wrapper">
-                        <label for="priority">優先度</label>
-                        <input type="number" id="priority" name="priority" placeholder="自動設定 (数値が大きいほど優先)">
-                    </div>
-                </div>
-
-                <div class="modal-actions">
-                    <button type="button" id="cancelRuleButton" class="btn-text">キャンセル</button>
-                    <button type="submit" id="saveRuleButton" class="btn-primary-minimal">保存</button>
-                </div>
-            </form>
+            </div>
         </div>
     </div>
 

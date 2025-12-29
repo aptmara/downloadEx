@@ -1,4 +1,4 @@
-// options.js
+// Reading file to find handleSaveRule
 
 /**
  * ルール管理クラス
@@ -23,6 +23,7 @@ class RuleManager {
                 enabled: rule.enabled !== undefined ? rule.enabled : true,
                 targetType: rule.targetType || 'fileUrl',
                 fileTypes: Array.isArray(rule.fileTypes) ? rule.fileTypes : [],
+                enableDateSubfolder: rule.enableDateSubfolder === true,
             })).sort((a, b) => (b.priority || 0) - (a.priority || 0));
 
             return this.rules;
@@ -191,7 +192,11 @@ class UIManager {
             priorityInput: document.getElementById('priority'),
             fileTypesContainer: document.getElementById('fileTypesContainer'),
             fileTypesInput: document.getElementById('fileTypesInput'),
-            statusMessage: document.getElementById('statusMessage')
+            statusMessage: document.getElementById('statusMessage'),
+            enableDateSubfolderInput: document.getElementById('enableDateSubfolder'),
+            helpModal: document.getElementById('helpModal'),
+            openHelpButton: document.getElementById('openHelpButton'),
+            closeHelpButton: document.getElementById('closeHelpButton')
         };
 
         this.setupEventListeners();
@@ -249,6 +254,21 @@ class UIManager {
                 const isExpert = e.target.checked;
                 document.body.classList.toggle('simple-mode', !isExpert);
                 chrome.storage.sync.set({ expertMode: isExpert });
+            });
+        }
+
+        // Help Modal Controls
+        if (this.elements.openHelpButton) {
+            this.elements.openHelpButton.addEventListener('click', () => {
+                this.elements.helpModal.classList.add('active');
+            });
+            this.elements.closeHelpButton.addEventListener('click', () => {
+                this.elements.helpModal.classList.remove('active');
+            });
+            this.elements.helpModal.addEventListener('click', e => {
+                if (e.target === this.elements.helpModal) {
+                    this.elements.helpModal.classList.remove('active');
+                }
             });
         }
 
@@ -544,6 +564,45 @@ class UIManager {
         rulesListContainer.appendChild(fragment);
     }
 
+    async handleSaveRule(event) {
+        event.preventDefault();
+        const { ruleIdInput, sitePatternInput, matchTypeSelect, folderNameInput, priorityInput, fileTypesContainer, enableDateSubfolderInput } = this.elements;
+
+        const tags = Array.from(fileTypesContainer.querySelectorAll('.tag')).map(tag => tag.firstChild.textContent);
+        const targetType = document.querySelector('input[name="targetType"]:checked').value;
+
+        const ruleData = {
+            sitePattern: sitePatternInput.value.trim(),
+            matchType: matchTypeSelect.value,
+            folderName: folderNameInput.value.trim(),
+            priority: priorityInput.value ? parseInt(priorityInput.value, 10) : undefined,
+            enabled: true,
+            targetType: targetType,
+            fileTypes: tags,
+            enableDateSubfolder: enableDateSubfolderInput.checked
+        };
+
+        if (!ruleData.sitePattern) {
+            this.showStatus('サイトパターンを入力してください。', 'error');
+            return;
+        }
+
+        try {
+            if (this.editingRuleId) {
+                await this.ruleManager.updateRule(this.editingRuleId, ruleData);
+                this.showStatus('ルールを更新しました。');
+            } else {
+                await this.ruleManager.addRule(ruleData);
+                this.showStatus('ルールを作成しました。');
+            }
+            this.closeModal();
+            this.loadAndRender();
+        } catch (error) {
+            console.error(error);
+            this.showStatus('保存に失敗しました。正規表現を確認してください。', 'error');
+        }
+    }
+
     // Modal Control
     openModal(isEdit, ruleId = null) {
         this.elements.ruleForm.reset();
@@ -566,12 +625,13 @@ class UIManager {
                 if (rule.fileTypes) {
                     rule.fileTypes.forEach(ft => this.addTag(ft));
                 }
+                this.elements.enableDateSubfolderInput.checked = rule.enableDateSubfolder === true;
             }
         } else {
             // Defaults
             this.elements.matchTypeSelect.value = 'includes';
-            const defaultRadio = document.getElementById('targetTypeFile');
             if (defaultRadio) defaultRadio.checked = true;
+            this.elements.enableDateSubfolderInput.checked = false;
         }
 
         this.elements.ruleFormModal.classList.add('active');
