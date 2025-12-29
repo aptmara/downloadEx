@@ -2,7 +2,7 @@
 
 [![Chrome Web Store](https://img.shields.io/badge/Chrome-Extension-4285F4?logo=googlechrome&logoColor=white)](https://chrome.google.com/webstore)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.3.0-blue.svg)](manifest.json)
+[![Version](https://img.shields.io/badge/version-1.3.1-blue.svg)](manifest.json)
 
 **DownloadEx** は、ダウンロードファイルをルールベースで自動的に指定フォルダへ振り分けるChrome拡張機能です。
 
@@ -55,11 +55,11 @@
 
 ### ルール設定例
 
-| パターン | マッチタイプ | 保存先フォルダ |
-|---------|------------|---------------|
-| `github.com` | 部分一致 | `GitHub/{YYYY-MM-DD}` |
-| `^https://example\.com/files/` | 正規表現 | `Example` |
-| `drive.google.com` | 部分一致 | `GoogleDrive` |
+| パターン | マッチタイプ | 保存先フォルダ | オプション |
+|---------|------------|---------------|------------|
+| `github.com` | 部分一致 | `GitHub` | 日付フォルダ: ON |
+| `^https://example\.com/files/` | 正規表現 | `Example` | - |
+| `drive.google.com` | 部分一致 | `GoogleDrive` | - |
 
 ### プレースホルダー
 
@@ -71,6 +71,8 @@
 | `{YYYY-MM-DD}` | 日付 | `2025-12-29` |
 | `{domain}` | ドメイン名 | `github.com` |
 
+> **Tip:** オプションページの「日付サブフォルダを作成」をONにすると、自動的にフォルダ末尾に `/{YYYY-MM-DD}` が追加されます。
+
 ---
 
 ## 🎨 UI デザイン
@@ -79,6 +81,7 @@
 
 - **余白を活かしたレイアウト**: 情報の密度を適切にコントロール
 - **アクセントカラー**: エレクトリックブルー (`#2563eb`) を効果的に使用
+- **ヘルプ機能**: わからない時は「？」アイコンからいつでも使い方を確認可能
 - **スムーズなアニメーション**: マイクロインタラクションで快適な操作感
 
 ---
