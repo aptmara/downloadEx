@@ -379,7 +379,6 @@ const decideFilename = (downloadItem, rules) => {
 
         return { filename: newFilename, conflictAction: 'uniquify' };
     }
-}
 
 // マッチしなかった場合
 saveLogDebounced({

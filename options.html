@@ -69,9 +69,13 @@
         </main>
     </div>
 
-    <button id="closeModalButton" class="modal-close">&times;</button>
-    </div>
-    <form id="ruleForm" novalidate>
+    <div id="ruleFormModal" class="modal-backdrop">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h2 id="formTitle">新規ルール</h2>
+                <button id="closeModalButton" class="modal-close">&times;</button>
+            </div>
+            <form id="ruleForm" novalidate>
         <!-- Form Content Omitted for brevity, assuming generic form structure remains -->
         <input type="hidden" id="ruleId">
         <div class="form-row">
