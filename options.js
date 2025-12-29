@@ -1,39 +1,350 @@
 // options.js
 
-document.addEventListener('DOMContentLoaded', () => {
-    // モーダル関連要素
-    const ruleFormModal = document.getElementById('ruleFormModal');
-    const openAddRuleModalButton = document.getElementById('openAddRuleModalButton');
-    const cancelRuleButton = document.getElementById('cancelRuleButton');
-    const closeModalButton = document.getElementById('closeModalButton');
-    const formTitle = document.getElementById('formTitle');
-    const ruleForm = document.getElementById('ruleForm');
+/**
+ * ルール管理クラス
+ * データの保持、加工、ストレージとの同期を担当
+ */
+class RuleManager {
+    constructor() {
+        this.rules = [];
+    }
 
-    // フォーム入力要素
-    const ruleIdInput = document.getElementById('ruleId');
-    const sitePatternInput = document.getElementById('sitePattern');
-    const matchTypeSelect = document.getElementById('matchType');
-    const folderNameInput = document.getElementById('folderName');
-    const priorityInput = document.getElementById('priority');
-    const fileTypesContainer = document.getElementById('fileTypesContainer');
-    const fileTypesInput = document.getElementById('fileTypesInput');
-    
-    const rulesListContainer = document.getElementById('rulesListContainer');
-    const statusMessageDiv = document.getElementById('statusMessage');
+    async loadRules() {
+        try {
+            const result = await chrome.storage.sync.get(['rules']);
+            const loadedRules = result.rules || [];
 
-    let rules = [];
-    let editingRuleId = null;
+            // データ整形とID/優先度の補完
+            this.rules = loadedRules.map((rule, index) => ({
+                ...rule,
+                id: rule.id || (Date.now() + index + Math.floor(Math.random() * 10000)).toString(),
+                matchType: rule.matchType || 'includes',
+                priority: Number.isFinite(rule.priority) ? rule.priority : 0,
+                enabled: rule.enabled !== undefined ? rule.enabled : true,
+                targetType: rule.targetType || 'fileUrl',
+                fileTypes: Array.isArray(rule.fileTypes) ? rule.fileTypes : [],
+            })).sort((a, b) => (b.priority || 0) - (a.priority || 0));
 
-    // XSS対策用のHTMLエスケープ関数
-    function escapeHTML(str) {
+            return this.rules;
+        } catch (error) {
+            console.error('Failed to load rules:', error);
+            throw error;
+        }
+    }
+
+    async saveRules(newRules) {
+        try {
+            await chrome.storage.sync.set({ rules: newRules });
+            this.rules = newRules;
+        } catch (error) {
+            console.error('Failed to save rules:', error);
+            throw error;
+        }
+    }
+
+    addRule(ruleData) {
+        const priority = Number.isFinite(ruleData.priority)
+            ? ruleData.priority
+            : (this.rules.length > 0 ? Math.max(...this.rules.map(r => r.priority || 0)) + 1 : 0);
+
+        const newRule = {
+            ...ruleData,
+            id: (Date.now() + Math.floor(Math.random() * 10000)).toString(),
+            priority,
+            enabled: true
+        };
+
+        // 正規表現チェック
+        if (newRule.matchType === 'regex') {
+            new RegExp(newRule.sitePattern); // エラーならここでthrowされる
+        }
+
+        const updatedRules = [...this.rules, newRule];
+        return this.saveRules(updatedRules);
+    }
+
+    updateRule(id, ruleData) {
+        const updatedRules = this.rules.map(rule => {
+            if (rule.id.toString() === id.toString()) {
+                // 優先度が入力されていない場合は既存を維持
+                const priority = Number.isFinite(ruleData.priority) ? ruleData.priority : rule.priority;
+                return { ...rule, ...ruleData, id: rule.id, priority };
+            }
+            return rule;
+        });
+
+        // 正規表現チェック
+        if (ruleData.matchType === 'regex') {
+            new RegExp(ruleData.sitePattern);
+        }
+
+        return this.saveRules(updatedRules);
+    }
+
+    deleteRule(id) {
+        const updatedRules = this.rules.filter(rule => rule.id.toString() !== id.toString());
+        return this.saveRules(updatedRules);
+    }
+
+    toggleRule(id, isEnabled) {
+        const updatedRules = this.rules.map(rule =>
+            rule.id.toString() === id.toString() ? { ...rule, enabled: isEnabled } : rule
+        );
+        return this.saveRules(updatedRules);
+    }
+
+    reorderRules(fromIndex, toIndex) {
+        const movedRule = this.rules[fromIndex];
+        const remainingRules = this.rules.filter((_, index) => index !== fromIndex);
+
+        // 新しい位置に挿入
+        remainingRules.splice(toIndex, 0, movedRule);
+
+        // 優先度を再計算 (リストの上にあるほど優先度高く)
+        const total = remainingRules.length;
+        const updatedRules = remainingRules.map((rule, index) => ({
+            ...rule,
+            priority: total - 1 - index
+        }));
+
+        this.rules = updatedRules;
+        return this.saveRules(updatedRules);
+    }
+
+    getRule(id) {
+        return this.rules.find(r => r.id.toString() === id.toString());
+    }
+
+    findMatchingRule(downloadItem) {
+        for (const rule of this.rules) {
+            if (rule.enabled === false) continue;
+
+            // マッチングロジック (Backgroudと共通)
+            const targetUrl = (rule.targetType === 'pageUrl' && downloadItem.referrer)
+                ? downloadItem.referrer
+                : downloadItem.url;
+
+            if (!targetUrl || !rule.sitePattern) continue;
+
+            let isMatch = false;
+            try {
+                switch (rule.matchType) {
+                    case 'exact':
+                        isMatch = (targetUrl === rule.sitePattern);
+                        break;
+                    case 'regex':
+                        const regex = new RegExp(rule.sitePattern, 'i');
+                        isMatch = regex.test(targetUrl);
+                        break;
+                    case 'includes':
+                    default:
+                        isMatch = targetUrl.toLowerCase().includes(rule.sitePattern.toLowerCase());
+                        break;
+                }
+            } catch (e) {
+                console.error('Match checking error:', e);
+                isMatch = false;
+            }
+
+            if (isMatch) {
+                // ファイルタイプチェック
+                if (rule.fileTypes && rule.fileTypes.length > 0) {
+                    const ext = downloadItem.filename.split('.').pop().toLowerCase();
+                    const ruleExts = rule.fileTypes.map(ft => ft.toLowerCase());
+                    if (!ruleExts.includes(ext)) {
+                        continue;
+                    }
+                }
+                return rule;
+            }
+        }
+        return null;
+    }
+}
+
+/**
+ * UI管理クラス
+ * DOM操作、イベントハンドリングを担当
+ */
+class UIManager {
+    constructor(ruleManager) {
+        this.ruleManager = ruleManager;
+        this.analyzer = new LogAnalyzer(); // Analyzer初期化
+
+        // DOM Elements
+        this.elements = {
+            rulesListContainer: document.getElementById('rulesListContainer'),
+            dashboard: document.getElementById('dashboard'), // ダッシュボード追加
+            openAddRuleModalButton: document.getElementById('openAddRuleModalButton'),
+            ruleFormModal: document.getElementById('ruleFormModal'),
+            closeModalButton: document.getElementById('closeModalButton'),
+            ruleForm: document.getElementById('ruleForm'),
+            cancelRuleButton: document.getElementById('cancelRuleButton'),
+
+            // Original form inputs, re-added for completeness based on original setupElements
+            saveRuleButton: document.getElementById('saveRuleButton'),
+            formTitle: document.getElementById('formTitle'),
+            ruleIdInput: document.getElementById('ruleId'),
+            sitePatternInput: document.getElementById('sitePattern'),
+            matchTypeSelect: document.getElementById('matchType'),
+            folderNameInput: document.getElementById('folderName'),
+            priorityInput: document.getElementById('priority'),
+            fileTypesContainer: document.getElementById('fileTypesContainer'),
+            fileTypesInput: document.getElementById('fileTypesInput'),
+            statusMessage: document.getElementById('statusMessage')
+        };
+
+        this.setupEventListeners();
+    }
+
+    setupEventListeners() {
+        // Modal controls
+        this.elements.openAddRuleModalButton.addEventListener('click', () => this.openModal(false));
+        this.elements.closeModalButton.addEventListener('click', () => this.closeModal());
+        this.elements.cancelRuleButton.addEventListener('click', () => this.closeModal());
+        this.elements.ruleFormModal.addEventListener('click', e => {
+            if (e.target === this.elements.ruleFormModal) this.closeModal();
+        });
+        document.addEventListener('keydown', e => {
+            if (e.key === 'Escape' && this.elements.ruleFormModal.classList.contains('active')) this.closeModal();
+        });
+
+        // Form submission
+        this.elements.ruleForm.addEventListener('submit', e => this.handleSaveRule(e));
+
+        // Tag input
+        this.setupTagInput();
+
+        // Rule List Event Delegation (Edit, Delete, Toggle)
+        this.elements.rulesListContainer.addEventListener('click', e => this.handleListClick(e));
+        this.elements.rulesListContainer.addEventListener('change', e => this.handleListChange(e));
+
+        // Drag and Drop
+        this.setupDragAndDrop();
+        // Test Rule
+        const testBtn = document.getElementById('testRuleButton');
+        if (testBtn) {
+            testBtn.addEventListener('click', () => this.handleTestRule());
+        }
+
+        // Storage sync listener
+        chrome.storage.onChanged.addListener((changes, namespace) => {
+            if (namespace === 'sync' && changes.rules) {
+                console.log('Reloading rules from storage change.');
+                this.loadAndRender();
+            }
+        });
+        // Expert Mode Toggle
+        const expertModeToggle = document.getElementById('expertModeToggle');
+        if (expertModeToggle) {
+            // Load state
+            chrome.storage.sync.get(['expertMode'], (result) => {
+                const isExpert = result.expertMode === true;
+                expertModeToggle.checked = isExpert;
+                document.body.classList.toggle('simple-mode', !isExpert);
+            });
+
+            // Change event
+            expertModeToggle.addEventListener('change', (e) => {
+                const isExpert = e.target.checked;
+                document.body.classList.toggle('simple-mode', !isExpert);
+                chrome.storage.sync.set({ expertMode: isExpert });
+            });
+        }
+
+        // Context Menu Draft Check
+        this.checkDraftRule();
+    }
+
+    // New method to check for draft rules
+    checkDraftRule() {
+        chrome.storage.local.get(['draftRule'], (result) => {
+            if (result.draftRule) {
+                const { sitePattern, timestamp } = result.draftRule;
+                // 1分以内のドラフトなら有効
+                if (Date.now() - timestamp < 60000) {
+                    // 少し待ってから開く（レンダリング待ち）
+                    setTimeout(() => {
+                        this.openModal(false, { sitePattern: sitePattern });
+                        this.showStatus('コンテキストメニューからルールの下書きを作成しました。', 'success');
+                    }, 300);
+                }
+                // 使用後は削除
+                chrome.storage.local.remove('draftRule');
+            }
+        });
+    }
+
+    handleTestRule() {
+        const urlInput = document.getElementById('testUrlInput');
+        const resultDiv = document.getElementById('testResult');
+        const url = urlInput.value.trim();
+
+        if (!url) return;
+
+        // 簡易的な擬似ダウンロードアイテムを作成
+        const mockDownloadItem = {
+            url: url,
+            referrer: '',
+            filename: url.split('/').pop() || 'file.dat',
+            ruleTargetType: 'fileUrl' // デフォルト
+        };
+
+        const rule = this.ruleManager.findMatchingRule(mockDownloadItem);
+
+        if (rule) {
+            // フォルダ名シミュレーション
+            let folderName = rule.folderName || '';
+
+            // プレースホルダー置換ロジック (簡易版)
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = (now.getMonth() + 1).toString().padStart(2, '0');
+            const day = now.getDate().toString().padStart(2, '0');
+
+            let domain = 'unknown';
+            try {
+                if (url.startsWith('http') || url.startsWith('https')) {
+                    domain = new URL(url).hostname;
+                }
+            } catch (e) { }
+
+            folderName = folderName
+                .replace(/{YYYY-MM-DD}/g, `${year}-${month}-${day}`)
+                .replace(/{YYYY}/g, year)
+                .replace(/{MM}/g, month)
+                .replace(/{DD}/g, day)
+                .replace(/{domain}/g, domain);
+
+            folderName = folderName.replace(/[<>:"/\\|?*.]|\.\.|\.$/g, '_').trim(); // Sanitize
+
+            const finalPath = folderName ? `${folderName}/${mockDownloadItem.filename}` : mockDownloadItem.filename;
+
+            resultDiv.innerHTML = `
+                <strong>マッチしました！</strong><br>
+                適用ルール: ${this.escapeHTML(rule.sitePattern)} (ID: ${rule.id})<br>
+                保存先予想: ${this.escapeHTML(finalPath)}
+            `;
+            resultDiv.className = 'test-result match';
+        } else {
+            resultDiv.innerHTML = 'どのルールにもマッチしませんでした。<br>デフォルトのダウンロードフォルダに保存されます。';
+            resultDiv.className = 'test-result no-match';
+        }
+        resultDiv.style.display = 'block';
+    }
+
+    escapeHTML(str) {
         if (typeof str !== 'string') return '';
         return str.replace(/[&<>"']/g, match => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[match]));
     }
-    
-    // --- タグ入力UIの制御 ---
-    function setupTagInput() {
-        fileTypesContainer.addEventListener('click', () => {
-            fileTypesInput.focus();
+
+    setupTagInput() {
+        const { fileTypesContainer, fileTypesInput } = this.elements;
+
+        fileTypesContainer.addEventListener('click', (e) => {
+            if (e.target !== fileTypesInput && !e.target.classList.contains('tag-close-btn')) {
+                fileTypesInput.focus();
+            }
         });
 
         fileTypesInput.addEventListener('keydown', e => {
@@ -41,14 +352,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 e.preventDefault();
                 const tagText = fileTypesInput.value.trim();
                 if (tagText) {
-                    addTag(tagText);
+                    this.addTag(tagText);
                     fileTypesInput.value = '';
+                }
+            }
+            if (e.key === 'Backspace' && fileTypesInput.value === '') {
+                const tags = fileTypesContainer.querySelectorAll('.tag');
+                if (tags.length > 0) {
+                    tags[tags.length - 1].remove();
                 }
             }
         });
     }
 
-    function addTag(text) {
+    addTag(text) {
         const tag = document.createElement('div');
         tag.className = 'tag';
         tag.textContent = text;
@@ -57,165 +374,76 @@ document.addEventListener('DOMContentLoaded', () => {
         closeBtn.type = 'button';
         closeBtn.className = 'tag-close-btn';
         closeBtn.innerHTML = '&times;';
-        closeBtn.setAttribute('aria-label', `Remove ${text}`);
-        closeBtn.onclick = () => {
-            tag.remove();
-        };
+        closeBtn.onclick = () => tag.remove();
 
         tag.appendChild(closeBtn);
-        fileTypesContainer.insertBefore(tag, fileTypesInput);
+        this.elements.fileTypesContainer.insertBefore(tag, this.elements.fileTypesInput);
     }
 
-    function clearTags() {
-        fileTypesContainer.querySelectorAll('.tag').forEach(tag => tag.remove());
+    clearTags() {
+        this.elements.fileTypesContainer.querySelectorAll('.tag').forEach(tag => tag.remove());
     }
 
-    // --- モーダル制御 ---
-    function openModal(isEdit = false, ruleToEdit = null) {
-        ruleForm.reset();
-        clearTags();
-        
-        formTitle.textContent = isEdit ? 'ルールを編集' : 'ルールを新規追加';
-        editingRuleId = isEdit && ruleToEdit ? ruleToEdit.id : null;
-        ruleIdInput.value = editingRuleId || '';
-
-        if (isEdit && ruleToEdit) {
-            sitePatternInput.value = ruleToEdit.sitePattern || '';
-            matchTypeSelect.value = ruleToEdit.matchType || 'includes';
-            folderNameInput.value = ruleToEdit.folderName || '';
-            priorityInput.value = ruleToEdit.priority || 0;
-            const targetType = ruleToEdit.targetType || 'fileUrl';
-            document.querySelector(`input[name="targetType"][value="${targetType}"]`).checked = true;
-            if (Array.isArray(ruleToEdit.fileTypes)) {
-                ruleToEdit.fileTypes.forEach(ft => addTag(ft));
-            }
-        } else {
-            matchTypeSelect.value = 'includes';
-            priorityInput.value = ''; // 新規追加時は空にしておく
-            document.getElementById('targetTypeFile').checked = true;
-        }
-        
-        ruleFormModal.classList.add('active');
-        document.body.classList.add('modal-active');
-        sitePatternInput.focus();
-    }
-
-    function closeModal() {
-        ruleFormModal.classList.remove('active');
-        document.body.classList.remove('modal-active');
-        editingRuleId = null;
-    }
-
-    openAddRuleModalButton.addEventListener('click', () => openModal(false));
-    closeModalButton.addEventListener('click', closeModal);
-    cancelRuleButton.addEventListener('click', closeModal);
-    ruleFormModal.addEventListener('click', e => { if (e.target === ruleFormModal) closeModal(); });
-    document.addEventListener('keydown', e => { if (e.key === 'Escape' && ruleFormModal.classList.contains('active')) closeModal(); });
-
-    // --- ルール表示 ---
-    function displayRules() {
-        rulesListContainer.innerHTML = ''; 
-
-        const sortedRules = [...rules].sort((a, b) => (b.priority || 0) - (a.priority || 0));
-
-        if (sortedRules.length === 0) {
-            rulesListContainer.innerHTML = '<p class="no-rules-message">まだルールがありません。「新しいルールを追加」ボタンから作成してください。</p>';
-            return;
-        }
-
-        sortedRules.forEach(rule => {
-            const sitePatternDisplay = rule.sitePattern ? escapeHTML(rule.sitePattern) : '(未設定)';
-            const folderNameDisplay = rule.folderName ? escapeHTML(rule.folderName) : '(ルート)';
-            const fileTypesDisplay = Array.isArray(rule.fileTypes) && rule.fileTypes.length > 0 ? escapeHTML(rule.fileTypes.join(', ')) : '(全タイプ)';
-            let matchTypeFriendly = '部分一致';
-            if (rule.matchType === 'exact') matchTypeFriendly = '完全一致';
-            if (rule.matchType === 'regex') matchTypeFriendly = '正規表現';
-            const targetTypeDisplay = rule.targetType === 'pageUrl' ? 'ページURL' : 'ファイルURL';
-
-            const ruleCardHTML = `
-                <div class="rule-card" data-id="${rule.id}" draggable="true">
-                    <div class="rule-card-header">
-                        <h3>${sitePatternDisplay}</h3>
-                        <div class="toggle-switch">
-                            <span class="status-text">${rule.enabled !== false ? '有効' : '無効'}</span>
-                            <div class="toggle-checkbox-container">
-                                <input type="checkbox" id="toggle-${rule.id}" class="toggle-checkbox toggle-rule-enabled" data-id="${rule.id}" ${rule.enabled !== false ? 'checked' : ''}>
-                                <label for="toggle-${rule.id}" class="toggle-label"></label>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="rule-card-body">
-                        <p><strong>保存先フォルダ:</strong> ${folderNameDisplay}</p>
-                        <p><strong>ファイルタイプ:</strong> ${fileTypesDisplay}</p>
-                        <p><strong>マッチ種別:</strong> ${matchTypeFriendly}</p>
-                        <p><strong>判定ターゲット:</strong> ${targetTypeDisplay}</p>
-                    </div>
-                    <div class="rule-card-footer">
-                        <span class="priority-display">優先度: ${rule.priority || 0}</span>
-                        <div class="rule-actions">
-                            <button class="btn-icon btn-edit-rule" data-id="${rule.id}" title="編集">
-                                <svg class="icon" viewBox="0 0 20 20" fill="currentColor"><path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z"></path><path fill-rule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clip-rule="evenodd"></path></svg>
-                            </button>
-                            <button class="btn-icon btn-delete-rule" data-id="${rule.id}" title="削除">
-                                <svg class="icon" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"></path></svg>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            `;
-            rulesListContainer.insertAdjacentHTML('beforeend', ruleCardHTML);
-        });
-
-        addEventListenersToRuleCards();
-    }
-    
-    function addEventListenersToRuleCards() {
-        document.querySelectorAll('.btn-edit-rule').forEach(button => button.addEventListener('click', e => handleEditRule(e.currentTarget.dataset.id)));
-        document.querySelectorAll('.btn-delete-rule').forEach(button => button.addEventListener('click', e => handleDeleteRule(e.currentTarget.dataset.id)));
-        document.querySelectorAll('.toggle-rule-enabled').forEach(toggle => toggle.addEventListener('change', e => handleToggleRuleEnabled(e.currentTarget.dataset.id, e.currentTarget.checked)));
-    }
-
-    // --- ドラッグ＆ドロップのロジック ---
-    function setupDragAndDrop() {
+    setupDragAndDrop() {
+        const container = this.elements.rulesListContainer;
         let draggedItem = null;
 
-        rulesListContainer.addEventListener('dragstart', e => {
-            if (e.target.classList.contains('rule-card')) {
-                draggedItem = e.target;
-                setTimeout(() => e.target.classList.add('dragging'), 0);
+        container.addEventListener('dragstart', e => {
+            if (e.target.closest('.rule-card')) {
+                draggedItem = e.target.closest('.rule-card');
+                setTimeout(() => draggedItem.classList.add('dragging'), 0);
             }
         });
 
-        rulesListContainer.addEventListener('dragend', () => {
+        container.addEventListener('dragend', async () => {
             if (draggedItem) {
                 draggedItem.classList.remove('dragging');
+
+                // DOM上の新しい順序からインデックスを取得して保存
+                const newOrderIds = [...container.querySelectorAll('.rule-card')].map(el => el.dataset.id);
+                // 元のルールのIDリスト
+                const oldOrderIds = this.ruleManager.rules.map(r => r.id.toString());
+
+                // 変更検知 (簡易的)
+                if (JSON.stringify(newOrderIds) !== JSON.stringify(oldOrderIds)) {
+                    // 全体の再構築はコストが高いので、RuleManager側でソートし直して保存する
+                    // ここではシンプルに、DOMの順序通りに優先度を再割り当てする一括更新を行う
+                    const rulesMap = new Map(this.ruleManager.rules.map(r => [r.id.toString(), r]));
+                    const total = newOrderIds.length;
+                    const newRules = newOrderIds.map((id, index) => {
+                        const r = rulesMap.get(id);
+                        return { ...r, priority: total - 1 - index };
+                    });
+
+                    try {
+                        await this.ruleManager.saveRules(newRules);
+                        this.showStatus('優先順位を更新しました。', 'success');
+                    } catch (e) {
+                        this.showStatus('優先順位の更新に失敗しました。', 'error');
+                        this.loadAndRender(); // 失敗したら元に戻す
+                    }
+                }
                 draggedItem = null;
             }
         });
-        
-        rulesListContainer.addEventListener('dragover', e => {
+
+        container.addEventListener('dragover', e => {
             e.preventDefault();
-            const afterElement = getDragAfterElement(rulesListContainer, e.clientY);
+            const afterElement = this.getDragAfterElement(container, e.clientY);
             const currentDraggable = document.querySelector('.dragging');
-            if (afterElement == null) {
-                rulesListContainer.appendChild(currentDraggable);
-            } else {
-                rulesListContainer.insertBefore(currentDraggable, afterElement);
-            }
-        });
-
-        rulesListContainer.addEventListener('drop', e => {
-            e.preventDefault();
-            if (draggedItem) {
-                draggedItem.classList.remove('dragging');
-                draggedItem = null;
-                updatePrioritiesAfterDrag();
+            if (currentDraggable) {
+                if (afterElement == null) {
+                    container.appendChild(currentDraggable);
+                } else {
+                    container.insertBefore(currentDraggable, afterElement);
+                }
             }
         });
     }
 
-    function getDragAfterElement(container, y) {
+    getDragAfterElement(container, y) {
         const draggableElements = [...container.querySelectorAll('.rule-card:not(.dragging)')];
+
         return draggableElements.reduce((closest, child) => {
             const box = child.getBoundingClientRect();
             const offset = y - box.top - box.height / 2;
@@ -227,175 +455,152 @@ document.addEventListener('DOMContentLoaded', () => {
         }, { offset: Number.NEGATIVE_INFINITY }).element;
     }
 
-    async function updatePrioritiesAfterDrag() {
-        const ruleCards = rulesListContainer.querySelectorAll('.rule-card');
-        const totalRules = ruleCards.length;
-        const updatedRules = [...rules];
-
-        ruleCards.forEach((card, index) => {
-            const ruleId = card.dataset.id;
-            const newPriority = totalRules - 1 - index;
-            const ruleToUpdate = updatedRules.find(r => r.id.toString() === ruleId);
-            if (ruleToUpdate) ruleToUpdate.priority = newPriority;
-        });
-        
+    async loadAndRender() {
         try {
-            await chrome.storage.sync.set({ rules: updatedRules });
-            rules = updatedRules;
-            displayRules();
-            showStatusMessage('優先順位を更新しました。', 'success');
+            await this.ruleManager.loadRules();
+            this.renderRules();
         } catch (error) {
-            console.error('優先順位の更新に失敗:', error);
-            showStatusMessage(`優先順位の更新に失敗しました: ${error.message}`, 'error');
+            this.showStatus('ルールの読み込みに失敗しました。', 'error');
         }
     }
 
-    // --- CRUD操作 ---
-    async function handleSaveRule(event) {
-        event.preventDefault(); 
-        
-        const id = editingRuleId || (Date.now() + Math.floor(Math.random() * 10000)).toString();
-        const sitePattern = sitePatternInput.value.trim();
-        const matchType = matchTypeSelect.value;
-        const folderName = folderNameInput.value.trim();
-        const fileTypes = [...fileTypesContainer.querySelectorAll('.tag')].map(tag => tag.firstChild.textContent);
-        const priorityInputVal = parseInt(priorityInput.value, 10);
-        let priority;
+    renderRules() {
+        const { rulesListContainer } = this.elements;
+        rulesListContainer.innerHTML = '';
+        const rules = this.ruleManager.rules;
 
-        if (!isNaN(priorityInputVal)) {
-            priority = priorityInputVal;
-        } else if (!editingRuleId) {
-            priority = rules.length > 0 ? Math.max(...rules.map(r => r.priority || 0)) + 1 : 0;
-        } else {
-            priority = rules.find(r => r.id === editingRuleId).priority;
-        }
-
-        const targetType = document.querySelector('input[name="targetType"]:checked').value;
-
-        if (!sitePattern) {
-            showStatusMessage('サイトパターンは必須です。', 'error');
-            sitePatternInput.focus();
+        if (rules.length === 0) {
+            rulesListContainer.innerHTML = '<div style="text-align:center; color:var(--text-secondary); padding:2rem;">有効なルールがありません。「新規ルール」ボタンから作成してください。</div>';
             return;
         }
 
-        const newRule = { 
-            id, sitePattern, matchType, folderName, fileTypes, priority, targetType,
-            enabled: editingRuleId ? rules.find(r => r.id.toString() === editingRuleId)?.enabled !== false : true
-        };
+        const fragment = document.createDocumentFragment();
 
-        if (newRule.matchType === 'regex') {
-            try {
-                new RegExp(newRule.sitePattern);
-            } catch (e) {
-                showStatusMessage(`正規表現が無効です: ${e.message}`, 'error');
-                sitePatternInput.focus();
-                return;
+        rules.forEach(rule => {
+            const item = document.createElement('div');
+            item.className = 'rule-item';
+            item.dataset.id = rule.id;
+            item.setAttribute('draggable', 'true');
+
+            // Info Section
+            const infoDiv = document.createElement('div');
+            infoDiv.className = 'rule-info';
+
+            const title = document.createElement('h3');
+            title.textContent = rule.sitePattern || '(未設定)';
+
+            const meta = document.createElement('div');
+            meta.className = 'rule-meta';
+            const folderText = rule.folderName ? ` ➔ ${rule.folderName}` : ' ➔ (ルート)';
+            const typesText = (rule.fileTypes && rule.fileTypes.length) ? ` [${rule.fileTypes.join(', ')}]` : '';
+
+            let matchTypeStr = '部分一致';
+            if (rule.matchType === 'exact') matchTypeStr = '完全一致';
+            if (rule.matchType === 'regex') matchTypeStr = '正規表現';
+
+            meta.textContent = `${matchTypeStr}${folderText}${typesText}`;
+
+            infoDiv.append(title, meta);
+
+            // Actions & Status
+            const actionsDiv = document.createElement('div');
+            actionsDiv.style.display = 'flex';
+            actionsDiv.style.alignItems = 'center';
+            actionsDiv.style.gap = '1rem';
+
+            // Enabled Toggle (Mini)
+            const toggleLabel = document.createElement('label');
+            toggleLabel.className = 'switch-minimal';
+            toggleLabel.style.transform = 'scale(0.8)'; // Make it smaller for the list
+
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.className = 'toggle-rule-enabled';
+            checkbox.dataset.id = rule.id;
+            checkbox.checked = rule.enabled !== false;
+
+            const slider = document.createElement('span');
+            slider.className = 'slider-minimal';
+
+            toggleLabel.append(checkbox, slider);
+
+            // Edit/Delete Buttons
+            const editBtn = document.createElement('button');
+            editBtn.className = 'btn-text btn-edit-rule';
+            editBtn.dataset.id = rule.id;
+            editBtn.textContent = '編集';
+
+            const deleteBtn = document.createElement('button');
+            deleteBtn.className = 'btn-text btn-delete-rule';
+            deleteBtn.dataset.id = rule.id;
+            deleteBtn.textContent = '削除';
+            deleteBtn.style.color = 'var(--danger-color)';
+
+            actionsDiv.append(toggleLabel, editBtn, deleteBtn);
+            item.append(infoDiv, actionsDiv);
+            fragment.appendChild(item);
+        });
+
+        rulesListContainer.appendChild(fragment);
+    }
+
+    // Modal Control
+    openModal(isEdit, ruleId = null) {
+        this.elements.ruleForm.reset();
+        this.clearTags();
+        this.editingRuleId = isEdit ? ruleId : null;
+        this.elements.formTitle.textContent = isEdit ? 'ルール編集' : '新規ルール';
+
+        if (isEdit && ruleId) {
+            const rule = this.ruleManager.getRule(ruleId);
+            if (rule) {
+                this.elements.ruleIdInput.value = rule.id;
+                this.elements.sitePatternInput.value = rule.sitePattern || '';
+                this.elements.matchTypeSelect.value = rule.matchType || 'includes';
+                this.elements.folderNameInput.value = rule.folderName || '';
+                this.elements.priorityInput.value = rule.priority;
+                const targetType = rule.targetType || 'fileUrl';
+                const targetRadio = document.querySelector(`input[name="targetType"][value="${targetType}"]`);
+                if (targetRadio) targetRadio.checked = true;
+
+                if (rule.fileTypes) {
+                    rule.fileTypes.forEach(ft => this.addTag(ft));
+                }
             }
-        }
-
-        let updatedRules;
-        if (editingRuleId) {
-            updatedRules = rules.map(rule => (rule.id.toString() === editingRuleId ? newRule : rule));
         } else {
-            updatedRules = [...rules, newRule];
+            // Defaults
+            this.elements.matchTypeSelect.value = 'includes';
+            const defaultRadio = document.getElementById('targetTypeFile');
+            if (defaultRadio) defaultRadio.checked = true;
         }
 
-        try {
-            await chrome.storage.sync.set({ rules: updatedRules });
-            rules = updatedRules; 
-            displayRules();
-            closeModal();
-            showStatusMessage(editingRuleId ? 'ルールを更新しました。' : '新しいルールを追加しました。', 'success');
-        } catch (error) {
-            console.error('ルールの保存に失敗:', error);
-            showStatusMessage(`ルールの保存に失敗しました: ${error.message}`, 'error');
-        }
-        editingRuleId = null; 
+        this.elements.ruleFormModal.classList.add('active');
+        this.elements.sitePatternInput.focus();
     }
 
-    ruleForm.addEventListener('submit', handleSaveRule);
-
-    function handleEditRule(ruleId) {
-        const ruleToEdit = rules.find(r => r.id.toString() === ruleId);
-        if (ruleToEdit) openModal(true, ruleToEdit);
+    closeModal() {
+        this.elements.ruleFormModal.classList.remove('active');
+        this.editingRuleId = null;
     }
 
-    async function handleDeleteRule(ruleId) {
-        if (!confirm('このルールを本当に削除しますか？')) return;
+    showStatus(message, type = 'success') {
+        const el = this.elements.statusMessage;
+        el.textContent = message;
+        el.style.backgroundColor = type === 'error' ? 'var(--danger-color)' : 'var(--text-primary)';
+        el.classList.add('visible');
 
-        const updatedRules = rules.filter(rule => rule.id.toString() !== ruleId);
-        try {
-            await chrome.storage.sync.set({ rules: updatedRules });
-            rules = updatedRules;
-            displayRules();
-            showStatusMessage('ルールを削除しました。', 'success');
-        } catch (error) {
-            console.error('ルールの削除に失敗:', error);
-            showStatusMessage(`ルールの削除に失敗しました: ${error.message}`, 'error');
-        }
+        // Hide existing timeout if any
+        if (this.statusTimeout) clearTimeout(this.statusTimeout);
+
+        this.statusTimeout = setTimeout(() => {
+            el.classList.remove('visible');
+        }, 3000);
     }
+}
 
-    async function handleToggleRuleEnabled(ruleId, isEnabled) {
-        const updatedRules = rules.map(rule => (rule.id.toString() === ruleId ? { ...rule, enabled: isEnabled } : rule));
-        try {
-            await chrome.storage.sync.set({ rules: updatedRules });
-            rules = updatedRules;
-            const card = document.querySelector(`.rule-card[data-id="${ruleId}"]`);
-            if (card) {
-                const statusText = card.querySelector('.status-text');
-                if (statusText) statusText.textContent = isEnabled ? '有効' : '無効';
-            }
-            showStatusMessage(`ルールを${isEnabled ? '有効' : '無効'}にしました。`, 'success');
-        } catch (error) {
-            console.error('状態の更新に失敗:', error);
-            showStatusMessage(`状態の更新に失敗しました: ${error.message}`, 'error');
-        }
-    }
-
-    // --- 初期化処理 ---
-    async function loadRules() {
-        try {
-            const result = await chrome.storage.sync.get(['rules']);
-            const loadedRules = result.rules || [];
-            
-            rules = loadedRules.map((rule, index) => ({
-                ...rule,
-                id: rule.id || (Date.now() + index + Math.floor(Math.random() * 10000)).toString(),
-                matchType: rule.matchType || 'includes',
-                priority: rule.priority || 0,
-                enabled: rule.enabled !== undefined ? rule.enabled : true,
-                targetType: rule.targetType || 'fileUrl',
-            }));
-
-            displayRules();
-        } catch (error) {
-            console.error('ルールの読み込みに失敗:', error);
-            showStatusMessage(`ルールの読み込みに失敗しました: ${error.message}`, 'error');
-        }
-    }
-
-    function showStatusMessage(message, type = 'success') {
-        statusMessageDiv.textContent = message;
-        statusMessageDiv.className = '';
-        statusMessageDiv.classList.add(type); 
-        statusMessageDiv.style.display = 'block'; 
-        statusMessageDiv.setAttribute('aria-live', 'assertive');
-        setTimeout(() => {
-            statusMessageDiv.style.display = 'none'; 
-            statusMessageDiv.className = '';
-            statusMessageDiv.removeAttribute('aria-live');
-        }, 4000);
-    }
-
-    // 初期ロード
-    loadRules();
-    setupTagInput();
-    setupDragAndDrop();
-
-    chrome.storage.onChanged.addListener((changes, namespace) => {
-        if (namespace === 'sync' && changes.rules) {
-            console.log('ストレージのルールが変更されたため再読み込みします。');
-            loadRules();
-        }
-    });
+// Initialize
+document.addEventListener('DOMContentLoaded', () => {
+    const ruleManager = new RuleManager();
+    const uiManager = new UIManager(ruleManager);
+    uiManager.loadAndRender();
 });

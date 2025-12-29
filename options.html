@@ -1,98 +1,141 @@
 <!DOCTYPE html>
 <html lang="ja">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ダウンロード振り分け設定</title>
+    <title>設定 - DownloadEx</title>
     <link rel="stylesheet" href="options.css">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;700&family=Inter:wght@400;500;600&display=swap"
+        rel="stylesheet">
 </head>
+
 <body>
-    <h1>ダウンロード振り分け設定</h1>
+    <div class="layout">
+        <header class="main-header">
+            <div class="header-logo">DownloadEx</div>
+            <div class="header-actions">
+                <div class="toggle-group">
+                    <span class="toggle-label">標準</span>
+                    <label class="switch-minimal">
+                        <input type="checkbox" id="expertModeToggle">
+                        <span class="slider-minimal"></span>
+                    </label>
+                    <span class="toggle-label">上級者</span>
+                </div>
+            </div>
+        </header>
 
-    <div id="statusMessage" role="alert"></div>
+        <main class="content-area">
+            <div class="page-title-section">
+                <h1>振り分けルール</h1>
+                <button id="openAddRuleModalButton" class="btn-primary-minimal">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="12" y1="5" x2="12" y2="19"></line>
+                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                    </svg>
+                    新規ルール
+                </button>
+            </div>
 
-    <div class="header-actions">
-        <button id="openAddRuleModalButton" class="btn btn-primary">
-            <svg xmlns="http://www.w3.org/2000/svg" class="icon" viewBox="0 0 20 20" fill="currentColor" style="width:1.25em; height:1.25em;">
-                <path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd" />
-            </svg>
-            新しいルールを追加
-        </button>
+            <div id="statusMessage" class="status-toast" role="alert"></div>
+
+            <div id="dashboard" class="dashboard-area">
+                <!-- Dynamic dashboard content -->
+            </div>
+
+            <div id="rulesListContainer" class="rules-list">
+                <!-- Rules will be injected here -->
+            </div>
+
+            <div class="test-section expert-only">
+                <h2>設定テスト</h2>
+                <div class="input-group-minimal">
+                    <input type="text" id="testUrlInput"
+                        placeholder="テストするURLまたはファイル名を入力 (例: https://example.com/file.pdf)">
+                    <button id="testRuleButton" class="btn-text">テスト実行</button>
+                </div>
+                <div id="testResult" class="test-result-minimal"></div>
+            </div>
+        </main>
     </div>
 
-    <div id="rulesListContainer">
-        </div>
-
-    <div id="ruleFormModal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="formTitle" aria-describedby="modalDescription">
-        <div class="modal-content">
+    <!-- Minimal Modal -->
+    <div id="ruleFormModal" class="modal-backdrop">
+        <div class="modal-card">
             <div class="modal-header">
-                <h2 id="formTitle">ルールを新規追加</h2>
-                <button id="closeModalButton" class="modal-close-btn" aria-label="閉じる">&times;</button>
+                <h2 id="formTitle">ルール編集</h2>
+                <button id="closeModalButton" class="modal-close">&times;</button>
             </div>
             <form id="ruleForm" novalidate>
-                <div class="modal-body">
-                    <p id="modalDescription" class="sr-only">ダウンロード振り分けルールを作成または編集します。</p>
-                    <input type="hidden" id="ruleId">
+                <input type="hidden" id="ruleId">
 
-                    <div class="form-group">
-                        <label for="sitePattern">サイトパターン (URLまたはキーワード)</label>
-                        <input type="text" id="sitePattern" name="sitePattern" required placeholder="例: google.com または 会議資料">
-                        <small>完全一致、部分一致 (デフォルト)、または正規表現で指定します。</small>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="matchType">マッチ種別</label>
-                        <select id="matchType" name="matchType">
-                            <option value="includes">部分一致 (キーワードを含む)</option>
-                            <option value="exact">完全一致 (URLが完全に一致)</option>
-                            <option value="regex">正規表現 (高度なパターンマッチ)</option>
-                        </select>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="folderName">保存先フォルダ名</label>
-                        <input type="text" id="folderName" name="folderName" required placeholder="例: 仕事/プロジェクトA">
-                        <small>ダウンロードフォルダ内のサブフォルダ名を指定します。空の場合はルートに保存。</small>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="fileTypesInput">ファイルタイプ (任意)</label>
-                        <div id="fileTypesContainer" class="tag-container">
-                             <input type="text" id="fileTypesInput" placeholder="例: pdf, docx, jpg">
-                        </div>
-                        <small>指定しない場合は全てのファイルタイプにマッチします。Enterキーかカンマで入力してください。</small>
-                    </div>
-
-                    <div class="form-group">
-                        <label>判定ターゲット</label>
-                        <div class="radio-group">
-                            <label class="radio-label">
-                                <input type="radio" id="targetTypeFile" name="targetType" value="fileUrl" checked>
-                                ファイルURL
-                            </label>
-                            <label class="radio-label">
-                                <input type="radio" id="targetTypePage" name="targetType" value="pageUrl">
-                                ページURL
-                            </label>
-                        </div>
-                        <small>どのURLをサイトパターンの判定に使うか選択します。</small>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="priority">優先度 (数値)</label>
-                        <input type="number" id="priority" name="priority" placeholder="例: 10">
-                        <small>数値が大きいほど優先的に適用されます。空の場合、自動で設定されます。</small>
+                <div class="form-row">
+                    <div class="input-wrapper">
+                        <label for="sitePattern">サイトパターン / キーワード</label>
+                        <input type="text" id="sitePattern" name="sitePattern" required placeholder="例: google.com">
                     </div>
                 </div>
 
-                <div class="modal-footer">
-                    <button type="button" id="cancelRuleButton" class="btn btn-secondary">キャンセル</button>
-                    <button type="submit" id="saveRuleButton" class="btn btn-primary">ルールを保存</button>
+                <div class="form-row expert-only">
+                    <div class="input-wrapper">
+                        <label for="matchType">マッチ条件</label>
+                        <select id="matchType" name="matchType">
+                            <option value="includes">部分一致</option>
+                            <option value="exact">完全一致</option>
+                            <option value="regex">正規表現</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="input-wrapper">
+                        <label for="folderName">保存先フォルダ名</label>
+                        <input type="text" id="folderName" name="folderName" required placeholder="例: 仕事/資料">
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="input-wrapper">
+                        <label for="fileTypesInput">ファイルタイプ (任意)</label>
+                        <div id="fileTypesContainer" class="tag-input-minimal">
+                            <input type="text" id="fileTypesInput" placeholder="pdf, jpg... (Enterで追加)">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-row expert-only">
+                    <label class="radio-group-label">判定対象</label>
+                    <div class="radio-minimal-group">
+                        <label class="radio-minimal">
+                            <input type="radio" id="targetTypeFile" name="targetType" value="fileUrl" checked>
+                            <span>ファイルURL</span>
+                        </label>
+                        <label class="radio-minimal">
+                            <input type="radio" id="targetTypePage" name="targetType" value="pageUrl">
+                            <span>ページURL</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="input-wrapper">
+                        <label for="priority">優先度</label>
+                        <input type="number" id="priority" name="priority" placeholder="自動設定 (数値が大きいほど優先)">
+                    </div>
+                </div>
+
+                <div class="modal-actions">
+                    <button type="button" id="cancelRuleButton" class="btn-text">キャンセル</button>
+                    <button type="submit" id="saveRuleButton" class="btn-primary-minimal">保存</button>
                 </div>
             </form>
         </div>
     </div>
 
+    <script src="analyzer.js"></script>
     <script src="options.js"></script>
 </body>
+
 </html>
