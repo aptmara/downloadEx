@@ -409,8 +409,8 @@ class UIManager {
         let draggedItem = null;
 
         container.addEventListener('dragstart', e => {
-            if (e.target.closest('.rule-card')) {
-                draggedItem = e.target.closest('.rule-card');
+            if (e.target.closest('.rule-item')) {
+                draggedItem = e.target.closest('.rule-item');
                 setTimeout(() => draggedItem.classList.add('dragging'), 0);
             }
         });
@@ -420,7 +420,7 @@ class UIManager {
                 draggedItem.classList.remove('dragging');
 
                 // DOM上の新しい順序からインデックスを取得して保存
-                const newOrderIds = [...container.querySelectorAll('.rule-card')].map(el => el.dataset.id);
+                const newOrderIds = [...container.querySelectorAll('.rule-item')].map(el => el.dataset.id);
                 // 元のルールのIDリスト
                 const oldOrderIds = this.ruleManager.rules.map(r => r.id.toString());
 
@@ -462,7 +462,7 @@ class UIManager {
     }
 
     getDragAfterElement(container, y) {
-        const draggableElements = [...container.querySelectorAll('.rule-card:not(.dragging)')];
+        const draggableElements = [...container.querySelectorAll('.rule-item:not(.dragging)')];
 
         return draggableElements.reduce((closest, child) => {
             const box = child.getBoundingClientRect();
@@ -473,6 +473,59 @@ class UIManager {
                 return closest;
             }
         }, { offset: Number.NEGATIVE_INFINITY }).element;
+    }
+
+    /**
+     * ルール一覧のクリックイベント処理
+     * 編集・削除ボタンのクリックを処理
+     */
+    handleListClick(e) {
+        // 編集ボタン
+        if (e.target.classList.contains('btn-edit-rule')) {
+            const ruleId = e.target.dataset.id;
+            this.openModal(true, ruleId);
+            return;
+        }
+
+        // 削除ボタン
+        if (e.target.classList.contains('btn-delete-rule')) {
+            const ruleId = e.target.dataset.id;
+            if (confirm('このルールを削除してもよろしいですか?')) {
+                this.ruleManager.deleteRule(ruleId)
+                    .then(() => {
+                        this.showStatus('ルールを削除しました。', 'success');
+                        this.loadAndRender();
+                    })
+                    .catch(err => {
+                        console.error('Delete error:', err);
+                        this.showStatus('削除に失敗しました。', 'error');
+                    });
+            }
+            return;
+        }
+    }
+
+    /**
+     * ルール一覧の変更イベント処理
+     * トグルスイッチの有効/無効切り替えを処理
+     */
+    handleListChange(e) {
+        // トグルスイッチ
+        if (e.target.classList.contains('toggle-rule-enabled')) {
+            const ruleId = e.target.dataset.id;
+            const isEnabled = e.target.checked;
+            this.ruleManager.toggleRule(ruleId, isEnabled)
+                .then(() => {
+                    this.showStatus(isEnabled ? 'ルールを有効にしました。' : 'ルールを無効にしました。', 'success');
+                })
+                .catch(err => {
+                    console.error('Toggle error:', err);
+                    this.showStatus('切り替えに失敗しました。', 'error');
+                    // エラー時は元に戻す
+                    e.target.checked = !isEnabled;
+                });
+            return;
+        }
     }
 
     async loadAndRender() {
@@ -604,9 +657,14 @@ class UIManager {
     }
 
     // Modal Control
-    openModal(isEdit, ruleId = null) {
+    openModal(isEdit, ruleIdOrDraft = null) {
         this.elements.ruleForm.reset();
         this.clearTags();
+
+        // ruleIdOrDraftがオブジェクトの場合はドラフトデータ、文字列の場合はruleId
+        const isDraft = typeof ruleIdOrDraft === 'object' && ruleIdOrDraft !== null;
+        const ruleId = isDraft ? null : ruleIdOrDraft;
+
         this.editingRuleId = isEdit ? ruleId : null;
         this.elements.formTitle.textContent = isEdit ? 'ルール編集' : '新規ルール';
 
@@ -633,6 +691,16 @@ class UIManager {
             const defaultRadio = document.getElementById('targetTypeFile');
             if (defaultRadio) defaultRadio.checked = true;
             this.elements.enableDateSubfolderInput.checked = false;
+
+            // ドラフトデータがある場合は適用
+            if (isDraft) {
+                if (ruleIdOrDraft.sitePattern) {
+                    this.elements.sitePatternInput.value = ruleIdOrDraft.sitePattern;
+                }
+                if (ruleIdOrDraft.folderName) {
+                    this.elements.folderNameInput.value = ruleIdOrDraft.folderName;
+                }
+            }
         }
 
         this.elements.ruleFormModal.classList.add('active');
