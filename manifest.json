@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "ダウンロードフォルダ振り分け",
+  "name": "downloadEX",
   "version": "1.3.4",
   "description": "特定のサイトやファイルタイプからのダウンロードを指定したサブフォルダに、優先度付きルールで柔軟に保存します。",
   "permissions": [
