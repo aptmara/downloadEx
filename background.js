@@ -260,7 +260,9 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
 // コンテキストメニュー処理
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     if (info.menuItemId === "create-rule-for-site") {
-        const urlToUse = info.pageUrl;
+        // リンク上で右クリック → リンク先のドメイン
+        // ページ上で右クリック → ページのドメイン
+        const urlToUse = info.linkUrl || info.pageUrl;
         let sitePattern = "";
         try {
             sitePattern = new URL(urlToUse).hostname;
@@ -380,18 +382,18 @@ const decideFilename = (downloadItem, rules) => {
         return { filename: newFilename, conflictAction: 'uniquify' };
     }
 
-// マッチしなかった場合
-saveLogDebounced({
-    timestamp: Date.now(),
-    filename: downloadItem.filename,
-    finalPath: downloadItem.filename,
-    url: downloadItem.url,
-    referrer: downloadItem.referrer,
-    ruleId: null,
-    status: 'no_match'
-});
+    // マッチしなかった場合
+    saveLogDebounced({
+        timestamp: Date.now(),
+        filename: downloadItem.filename,
+        finalPath: downloadItem.filename,
+        url: downloadItem.url,
+        referrer: downloadItem.referrer,
+        ruleId: null,
+        status: 'no_match'
+    });
 
-return undefined;
+    return undefined;
 };
 
 chrome.downloads.onDeterminingFilename.addListener((downloadItem, suggest) => {
