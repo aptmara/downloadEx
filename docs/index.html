@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>downloadEX - Download Folder Organizer</title>
+    <style>
+        :root {
+            --bg-color: #fafafa;
+            --surface-color: #ffffff;
+            --text-primary: #111827;
+            --text-secondary: #6b7280;
+            --accent-color: #2563eb;
+            --max-width: 800px;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            line-height: 1.6;
+            padding: 2rem 1rem;
+        }
+
+        .container {
+            max-width: var(--max-width);
+            margin: 0 auto;
+            background: var(--surface-color);
+            padding: 2.5rem;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            font-size: 2rem;
+            margin-bottom: 0.5rem;
+            letter-spacing: -0.025em;
+        }
+
+        h2 {
+            font-size: 1.5rem;
+            margin-top: 2.5rem;
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        p {
+            margin-bottom: 1rem;
+            color: var(--text-secondary);
+        }
+
+        ul {
+            margin-left: 1.5rem;
+            margin-bottom: 1.5rem;
+            color: var(--text-secondary);
+        }
+
+        li {
+            margin-bottom: 0.5rem;
+        }
+
+        a {
+            color: var(--accent-color);
+            text-decoration: none;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+
+        .btn {
+            display: inline-block;
+            background-color: var(--accent-color);
+            color: white;
+            padding: 0.75rem 1.5rem;
+            border-radius: 6px;
+            font-weight: 500;
+            margin-top: 1rem;
+            transition: background-color 0.2s;
+        }
+
+        .btn:hover {
+            background-color: #1d4ed8;
+            text-decoration: none;
+        }
+
+        .footer {
+            margin-top: 4rem;
+            padding-top: 2rem;
+            border-top: 1px solid #e5e7eb;
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+            text-align: center;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>ダウンロードフォルダ振り分け</h1>
+        <p>特定のサイトやファイルタイプからのダウンロードを指定したサブフォルダに、優先度付きルールで自動的に振り分けます。</p>
+
+        <!-- <a href="#" class="btn">Chromeウェブストアで見る</a> -->
+
+        <h2>機能概要</h2>
+        <p>Webからのダウンロード完了時にファイルを整理する拡張機能です。事前に設定したルールに従い、ファイルを指定フォルダへ自動的に移動します。</p>
+        <ul>
+            <li><strong>柔軟なルール設定:</strong> URLパターン、キーワード、正規表現を使用可能</li>
+            <li><strong>ファイルタイプ別:</strong> 拡張子ごとに保存先を指定可能</li>
+            <li><strong>優先度設定:</strong> 競合するルールを優先順位で制御</li>
+            <li><strong>手動実行:</strong> 右クリックメニューからの即座振り分け</li>
+        </ul>
+
+        <h2>使い方</h2>
+        <ol>
+            <li>拡張機能アイコンをクリックし、設定画面を開きます。</li>
+            <li>「新しいルールを追加」ボタンをクリックします。</li>
+            <li>条件（URLやファイルタイプ）と保存先フォルダを入力し、保存します。</li>
+            <li>次回から条件に一致するファイルが指定フォルダへ自動保存されます。</li>
+        </ol>
+
+        <h2>サポート</h2>
+        <p>不具合の報告や機能リクエストは、以下のGitHubリポジトリのIssuesで受け付けています。</p>
+        <p><a href="https://github.com/aptmara/downloadEx/issues">GitHub Issues</a></p>
+
+        <h2>プライバシーと権限</h2>
+        <p>本拡張機能は、ユーザーのプライバシーを尊重し、データ収集を行いません。詳細は<a href="privacy.html">プライバシーポリシー</a>をご確認ください。</p>
+
+        <div class="footer">
+            &copy; 2026 Download Folder Organizer. <a href="privacy.html">プライバシーポリシー</a>
+        </div>
+    </div>
+</body>
+
+</html>
