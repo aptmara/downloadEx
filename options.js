@@ -303,11 +303,11 @@ class UIManager {
         if (!url) return;
 
         // 簡易的な擬似ダウンロードアイテムを作成
+        // referrerにもURLを設定し、targetType:'pageUrl'のルールもテスト可能にする
         const mockDownloadItem = {
             url: url,
-            referrer: '',
-            filename: url.split('/').pop() || 'file.dat',
-            ruleTargetType: 'fileUrl' // デフォルト
+            referrer: url,
+            filename: url.split('/').pop() || 'file.dat'
         };
 
         const rule = this.ruleManager.findMatchingRule(mockDownloadItem);
@@ -315,6 +315,11 @@ class UIManager {
         if (rule) {
             // フォルダ名シミュレーション
             let folderName = rule.folderName || '';
+
+            // 日付サブフォルダオプション (background.jsと同一ロジック)
+            if (rule.enableDateSubfolder) {
+                folderName = folderName ? `${folderName}/{YYYY-MM-DD}` : `{YYYY-MM-DD}`;
+            }
 
             // プレースホルダー置換ロジック (簡易版)
             const now = new Date();

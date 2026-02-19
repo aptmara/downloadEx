@@ -2,7 +2,7 @@
 
 [![Chrome Web Store](https://img.shields.io/badge/Chrome-Extension-4285F4?logo=googlechrome&logoColor=white)](https://chrome.google.com/webstore)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.3.1-blue.svg)](manifest.json)
+[![Version](https://img.shields.io/badge/version-1.3.7-blue.svg)](manifest.json)
 
 **DownloadEx** は、ダウンロードファイルをルールベースで自動的に指定フォルダへ振り分けるChrome拡張機能です。
 
@@ -17,7 +17,7 @@
 - **📅 動的プレースホルダー**: `{YYYY-MM-DD}`, `{domain}` などでフォルダ名を動的生成
 - **🏷️ ファイルタイプフィルター**: 拡張子ごとに異なるルールを適用可能
 - **⚡ 優先度ベースルール**: 複数ルールがマッチした場合、優先度順に適用
-- **🖱️ コンテキストメニュー統合**: 右クリックから簡単にルール作成
+- **🖱️ コンテキストメニュー統合**: リンク/ページ上で右クリックし、対象ドメインのルールを簡単に作成
 - **🔧 シンプル/エキスパートモード**: 初心者から上級者まで使いやすいUI
 
 ---
@@ -25,11 +25,13 @@
 ## 🚀 インストール
 
 ### Chrome ウェブストアから
+
 (公開後にリンクを追加)
 
 ### 開発者モードでインストール
 
 1. このリポジトリをクローンまたはダウンロード
+
    ```bash
    git clone https://github.com/aptmara/downloadEx.git
    ```

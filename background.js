@@ -57,9 +57,9 @@ const replacePlaceholders = (folderName, downloadItem, cachedDomain) => {
     let domain = cachedDomain || 'unknown';
     // cachedDomainが渡されず、かつdomainが必要な場合のみ計算
     if (!cachedDomain && folderName.includes('{domain}')) {
-        const sourceUrl = (downloadItem.ruleTargetType === 'pageUrl' && downloadItem.referrer)
-            ? downloadItem.referrer
-            : downloadItem.url;
+        // ドメイン解決: 呼び出し元(decideFilename)でcachedDomainが渡されるため
+        // ここは安全なフォールバックとしてdownloadItem.urlを使用
+        const sourceUrl = downloadItem.url;
         try {
             if (sourceUrl && (sourceUrl.startsWith('http') || sourceUrl.startsWith('https'))) {
                 domain = new URL(sourceUrl).hostname;
@@ -159,7 +159,7 @@ const processRules = (rawRules) => {
     return processed.sort((a, b) => {
         const priorityDiff = (b.priority || 0) - (a.priority || 0);
         if (priorityDiff !== 0) return priorityDiff;
-        return (b.id || 0) - (a.id || 0);
+        return String(b.id || '').localeCompare(String(a.id || ''));
     });
 };
 
@@ -332,7 +332,12 @@ const decideFilename = (downloadItem, rules) => {
             }
         } catch (e) { console.error(e); }
 
-        if (isMatch) {
+        // URLマッチしなければ次のルールへ
+        if (!isMatch) continue;
+
+        // ファイルタイプ指定がある場合のみ拡張子チェック
+        // 空配列 = 全ファイルタイプ対象なのでチェックをスキップ
+        if (rule.lowerCaseFileTypes.length > 0) {
             if (!ext || !rule.lowerCaseFileTypes.includes(ext)) {
                 continue;
             }
@@ -346,7 +351,8 @@ const decideFilename = (downloadItem, rules) => {
         }
 
         if (folderName.includes('{domain}') && !cachedDomain) {
-            const sourceUrl = (downloadItem.ruleTargetType === 'pageUrl' && downloadItem.referrer)
+            // マッチしたルールのtargetTypeに基づいてドメイン解決
+            const sourceUrl = (rule.targetType === 'pageUrl' && downloadItem.referrer)
                 ? downloadItem.referrer
                 : downloadItem.url;
             try {
@@ -421,7 +427,9 @@ chrome.downloads.onDeterminingFilename.addListener((downloadItem, suggest) => {
     (async () => {
         const rules = await getRules();
         const result = decideFilename(downloadItem, rules);
-        suggest(result);
+        if (result) {
+            suggest(result);
+        }
     })();
     return true;
 });
