@@ -5,16 +5,35 @@ let cachedRules = null;
 let rulesPromise = null;
 
 // Cache global state to avoid async calls on every download
-let globalEnabledCache = true; // Default to true until loaded
+/** @type {boolean} グローバル有効フラグ（同期読み込み失敗時は true をデフォルト） */
+let globalEnabledCache = true;
 
-// --- Initialization ---
+// --- Storage Mirror Keys ---
+/** storage.local に保存するミラーキー（storage.sync より高速） */
+const LOCAL_MIRROR_RULES_KEY = '_mirror_rules';
+const LOCAL_MIRROR_GLOBAL_ENABLED_KEY = '_mirror_globalEnabled';
 
-// Initialize global state cache
-chrome.storage.sync.get(['globalEnabled'], (result) => {
-    if (result.globalEnabled !== undefined) {
-        globalEnabledCache = result.globalEnabled;
+/**
+ * storage.sync の rules と globalEnabled を storage.local にミラーする
+ * 呼び出し元: onInstalled / storage.onChanged
+ * @param {object} syncData { rules?, globalEnabled? }
+ * @returns {Promise<void>}
+ */
+const mirrorSyncToLocal = async (syncData) => {
+    const toWrite = {};
+    if ('rules' in syncData) {
+        toWrite[LOCAL_MIRROR_RULES_KEY] = syncData.rules;
     }
-});
+    if ('globalEnabled' in syncData) {
+        toWrite[LOCAL_MIRROR_GLOBAL_ENABLED_KEY] = syncData.globalEnabled;
+    }
+    if (Object.keys(toWrite).length > 0) {
+        await chrome.storage.local.set(toWrite);
+    }
+};
+
+// --- Initialization (後方に移動) ---
+// processRules / mirrorSyncToLocal を参照するため、定義後に実行される
 
 /**
  * 安全なフォルダ名に変換する
@@ -163,11 +182,50 @@ const processRules = (rawRules) => {
     });
 };
 
+// --- Initialization ---
+// SW起動時: storage.local（ミラー）から高速プリロード
+// storage.sync よりも桁違いに速いため、コールドスタート遅延を回避する
+// ※ processRules / mirrorSyncToLocal の定義後に配置（constは巻き上げなし）
+(async () => {
+    const perfStart = performance.now();
+    try {
+        const localResult = await chrome.storage.local.get([
+            LOCAL_MIRROR_RULES_KEY,
+            LOCAL_MIRROR_GLOBAL_ENABLED_KEY
+        ]);
+
+        if (localResult[LOCAL_MIRROR_GLOBAL_ENABLED_KEY] !== undefined) {
+            globalEnabledCache = localResult[LOCAL_MIRROR_GLOBAL_ENABLED_KEY];
+        }
+
+        if (localResult[LOCAL_MIRROR_RULES_KEY] !== undefined) {
+            // ミラーが存在すれば即座にキャッシュを構築
+            cachedRules = processRules(localResult[LOCAL_MIRROR_RULES_KEY]);
+            console.log(`[DownloaderExt] Cold-start preload from local mirror: ${cachedRules.length} rules (${(performance.now() - perfStart).toFixed(1)}ms)`);
+        } else {
+            // ミラー未作成（初回インストール前）: storage.sync にフォールバック
+            const syncResult = await chrome.storage.sync.get(['rules', 'globalEnabled']);
+            if (syncResult.globalEnabled !== undefined) {
+                globalEnabledCache = syncResult.globalEnabled;
+            }
+            cachedRules = processRules(syncResult.rules);
+            // ミラーを作成して次回以降を高速化
+            await mirrorSyncToLocal(syncResult);
+            console.log(`[DownloaderExt] Cold-start preload from sync (no mirror yet): ${cachedRules.length} rules (${(performance.now() - perfStart).toFixed(1)}ms)`);
+        }
+    } catch (e) {
+        console.error('[DownloaderExt] Cold-start preload error:', e);
+        cachedRules = cachedRules ?? [];
+    }
+})();
+
 /**
  * ルールを取得する (キャッシュ優先)
+ * 強制リロード時は storage.local ミラー → storage.sync の順で試みる
+ * @param {boolean} forceReload キャッシュを無視して再読み込みする
  */
 const getRules = async (forceReload = false) => {
-    if (cachedRules && !forceReload) {
+    if (cachedRules !== null && !forceReload) {
         return cachedRules;
     }
 
@@ -175,18 +233,33 @@ const getRules = async (forceReload = false) => {
         return rulesPromise;
     }
 
-    rulesPromise = new Promise((resolve) => {
-        chrome.storage.sync.get(['rules'], (result) => {
+    rulesPromise = (async () => {
+        try {
+            // storage.local ミラーを優先（高速）
+            const localResult = await chrome.storage.local.get([LOCAL_MIRROR_RULES_KEY]);
+            if (!forceReload && localResult[LOCAL_MIRROR_RULES_KEY] !== undefined) {
+                cachedRules = processRules(localResult[LOCAL_MIRROR_RULES_KEY]);
+                console.log(`[DownloaderExt] Rules loaded from local mirror: ${cachedRules.length}`);
+                return cachedRules;
+            }
+
+            // forceReload または ミラーなし → storage.sync にフォールバック
+            const syncResult = await chrome.storage.sync.get(['rules']);
             if (chrome.runtime.lastError) {
                 console.error("[DownloaderExt] Rule load error:", chrome.runtime.lastError);
-                cachedRules = [];
+                cachedRules = cachedRules ?? [];
             } else {
-                cachedRules = processRules(result.rules);
-                console.log(`[DownloaderExt] Rules loaded: ${cachedRules.length}`);
+                cachedRules = processRules(syncResult.rules);
+                // ミラーを更新
+                await mirrorSyncToLocal({ rules: syncResult.rules });
+                console.log(`[DownloaderExt] Rules loaded from sync: ${cachedRules.length}`);
             }
-            resolve(cachedRules);
-        });
-    });
+        } catch (e) {
+            console.error('[DownloaderExt] getRules error:', e);
+            cachedRules = cachedRules ?? [];
+        }
+        return cachedRules;
+    })();
 
     try {
         await rulesPromise;
@@ -243,16 +316,23 @@ const saveLogDebounced = (logEntry) => {
 
 // --- Event Listeners ---
 
-// ストレージ変更監視を最適化
+// ストレージ変更監視
+// storage.sync の変更を検知したら: (1) キャッシュ更新, (2) local ミラー更新
 chrome.storage.onChanged.addListener((changes, namespace) => {
     if (namespace === 'sync') {
+        const mirrorUpdate = {};
         if (changes.rules) {
-            console.log("[DownloaderExt] Rules changed. Updating cache.");
-            getRules(true);
+            console.log("[DownloaderExt] Rules changed. Updating cache and mirror.");
+            cachedRules = processRules(changes.rules.newValue);
+            mirrorUpdate.rules = changes.rules.newValue;
         }
         if (changes.globalEnabled) {
             globalEnabledCache = changes.globalEnabled.newValue;
+            mirrorUpdate.globalEnabled = changes.globalEnabled.newValue;
             console.log(`[DownloaderExt] Global enabled changed to: ${globalEnabledCache}`);
+        }
+        if (Object.keys(mirrorUpdate).length > 0) {
+            mirrorSyncToLocal(mirrorUpdate);
         }
     }
 });
@@ -282,8 +362,15 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 
 chrome.runtime.onInstalled.addListener(async (details) => {
     if (details.reason === "install") {
-        await chrome.storage.sync.set({ rules: [], globalEnabled: true });
+        const initData = { rules: [], globalEnabled: true };
+        await chrome.storage.sync.set(initData);
+        // インストール直後に local ミラーも作成
+        await mirrorSyncToLocal(initData);
         console.log("[DownloaderExt] Installed.");
+    } else {
+        // アップデート時: storage.sync から最新値を取得してミラーを更新
+        const syncData = await chrome.storage.sync.get(['rules', 'globalEnabled']);
+        await mirrorSyncToLocal(syncData);
     }
 
     // メニュー生成はonInstalledだけで十分（重複作成エラー回避）
@@ -403,30 +490,37 @@ const decideFilename = (downloadItem, rules) => {
 };
 
 chrome.downloads.onDeterminingFilename.addListener((downloadItem, suggest) => {
+    // --- 性能計測: ダウンロード開始からsuggest()呼び出しまでの時間を計測 ---
+    const _perfStart = performance.now();
+    /** @param {'sync'|'async'} path どちらのパスを通ったか */
+    const _logPerf = (path, matched) => {
+        const elapsed = (performance.now() - _perfStart).toFixed(2);
+        console.log(`[DownloaderExt] [PERF] onDeterminingFilename: path=${path}, matched=${matched}, elapsed=${elapsed}ms, file=${downloadItem.filename}`);
+    };
+
     // 1. グローバル設定チェック (同期キャッシュ)
     if (globalEnabledCache === false) {
+        _logPerf('sync', false);
         return; // 即座に終了 (デフォルト動作)
     }
 
-    // 2. 最適化パス: ルールがキャッシュされていれば同期的に処理
-    // これによりPromise生成とイベントループ遅延を完全に回避
+    // 2. 高速パス: ルールがキャッシュされていれば同期的に処理
+    // Promise生成とイベントループ遅延を完全に回避
     if (cachedRules !== null) {
         const result = decideFilename(downloadItem, cachedRules);
+        _logPerf('sync', !!result);
         if (result) {
             suggest(result);
-        } else {
-            // suggest()を呼ばずにreturnするとデフォルト動作になるが
-            // 明示的にコンフリクトアクション等を指定したい場合は呼ぶ
-            // ここでは何も返さない = デフォルト
         }
         return; // return trueしない = 同期処理完了
     }
 
-    // 3. コールドスタートパス: まだロードされていない場合は待機
-    // ここだけ return true して非同期モードに入る
+    // 3. コールドスタートパス: キャッシュ未初期化の場合のみ（起動直後の極めて稀なケース）
+    // スクリプト最上位の非同期プリロードが完了する前にダウンロードが発生した場合のみ通る
     (async () => {
         const rules = await getRules();
         const result = decideFilename(downloadItem, rules);
+        _logPerf('async', !!result);
         if (result) {
             suggest(result);
         }
